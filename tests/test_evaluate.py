@@ -1,7 +1,9 @@
 import pytest
 
 from financial_inclusion_africa.evaluate import (
+    classification_metrics,
     cost_at_threshold,
+    full_classification_report,
     theoretical_threshold,
     total_cost,
 )
@@ -32,3 +34,22 @@ def test_cost_at_threshold_contact_nobody_or_everybody():
     # Personne contacté : 1 FN ; tout le monde contacté : 3 FP
     assert cost_at_threshold(y_true, y_proba, 1.01, 0.5, 5.0) == pytest.approx(5.0)
     assert cost_at_threshold(y_true, y_proba, 0.0, 0.5, 5.0) == pytest.approx(1.5)
+
+
+def test_classification_metrics_perfect_model():
+    y_true = [0, 0, 1, 1]
+    y_proba = [0.1, 0.2, 0.8, 0.9]
+    m = classification_metrics(y_true, y_proba, threshold=0.5)
+    assert m["pr_auc"] == pytest.approx(1.0)
+    assert m["roc_auc"] == pytest.approx(1.0)
+    assert m["precision"] == m["recall"] == m["f1"] == m["accuracy"] == 1.0
+    assert m["cost"] == 0.0
+    assert 0 < m["log_loss"] < 0.25
+    assert m["brier"] == pytest.approx((0.01 + 0.04 + 0.04 + 0.01) / 4)
+
+
+def test_full_classification_report_lists_both_classes():
+    report = full_classification_report(
+        [0, 1, 0, 1], [0.1, 0.9, 0.6, 0.4], threshold=0.5
+    )
+    assert "No (0)" in report and "Yes (1)" in report
