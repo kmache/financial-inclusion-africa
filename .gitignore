@@ -20,5 +20,5 @@ catboost_info/
 .pytest_cache/
 .ruff_cache/
 
-# Supports de cours (non versionnés)
-docs/*.pdf
+# Documents privés (cours, corrigé) : non versionnés
+docs/
