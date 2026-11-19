@@ -18,5 +18,5 @@ TARGET = "bank_account"
 ID_COLUMNS = ["uniqueid"]
 
 # --- Coûts métier (scénario KaziPay, hypothèses pédagogiques) ----------------
-COST_FP = 0.5  # USD : contacter une personne sans compte
-COST_FN = 5.0  # USD : ne pas contacter une personne bancarisée
+COST_FP = 0.5  # USD : cout de contacter une personne sans compte
+COST_FN = 5.0  # USD : cout de ne pas contacter une personne qui a un compte.
