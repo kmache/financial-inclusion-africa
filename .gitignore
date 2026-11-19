@@ -1,0 +1,24 @@
+# Python-generated files
+__pycache__/
+*.py[oc]
+build/
+dist/
+wheels/
+*.egg-info
+
+# Virtual environments
+.venv
+
+# Données (non versionnées : à télécharger depuis Zindi)
+data/raw/
+data/processed/*
+!data/processed/.gitkeep
+
+# Artefacts
+catboost_info/
+.ipynb_checkpoints/
+.pytest_cache/
+.ruff_cache/
+
+# Supports de cours (non versionnés)
+docs/*.pdf

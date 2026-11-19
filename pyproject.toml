@@ -1,0 +1,32 @@
+[project]
+name = "financial-inclusion-africa"
+version = "0.1.0"
+description = "Prédire l'inclusion financière en Afrique de l'Est : du jeu de données brut à un modèle évalué honnêtement (AIMS Module 5)."
+readme = "README.md"
+authors = [
+    { name = "Karim", email = "rkarimmache@gmail.com" }
+]
+requires-python = ">=3.12"
+dependencies = [
+    "catboost>=1.2.10",
+    "lightgbm>=4.7.0",
+    "matplotlib>=3.11.2",
+    "optuna>=5.1.0",
+    "pandas>=3.1.1",
+    "scikit-learn>=1.9.1",
+    "seaborn>=0.13.2",
+    "shap>=0.54.1",
+    "xgboost>=3.4.1",
+]
+
+[build-system]
+requires = ["uv_build>=0.13.7,<0.14.0"]
+build-backend = "uv_build"
+
+[dependency-groups]
+dev = [
+    "ipykernel>=7.4.0",
+    "jupyterlab>=4.6.6",
+    "pytest>=9.2.0",
+    "ruff>=0.17.5",
+]
