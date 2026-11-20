@@ -17,7 +17,7 @@ from sklearn.base import BaseEstimator, TransformerMixin
 from sklearn.compose import ColumnTransformer
 from sklearn.impute import SimpleImputer
 from sklearn.pipeline import Pipeline, make_pipeline
-from sklearn.preprocessing import OneHotEncoder, StandardScaler
+from sklearn.preprocessing import OneHotEncoder, OrdinalEncoder, StandardScaler
 
 from financial_inclusion_africa.data import CAT_COLS, NUM_COLS
 
@@ -98,22 +98,33 @@ class AddFeatures(BaseEstimator, TransformerMixin):
         return np.asarray([*self.feature_names_in_, *extra], dtype=object)
 
 
-def onehot_preprocessor(cat_cols: list[str], num_cols: list[str]) -> ColumnTransformer:
-    """One-hot pour les catégorielles ; imputation médiane puis standardisation pour les numériques.
+MIN_FREQUENCY = 20
+"""Seuil de rareté commun à tous les encodages (Q2.6, Q3.2)."""
+INFREQUENT = "infrequent"
+
+
+def onehot_preprocessor(
+    cat_cols: list[str], num_cols: list[str], scale: bool = True
+) -> ColumnTransformer:
+    """One-hot pour les catégorielles ; imputation médiane (+ standardisation) des numériques.
 
     - ``min_frequency=20`` : les modalités vues moins de 20 fois à l'entraînement sont regroupées
       dans une colonne « infrequent » (Q2.6, Q3.2) ;
     - ``handle_unknown="infrequent_if_exist"`` : une modalité jamais vue à l'entraînement est
-      envoyée dans cette colonne si elle existe, sinon codée par des zéros, sans erreur.
+      envoyée dans cette colonne si elle existe, sinon codée par des zéros, sans erreur ;
+    - ``scale`` : standardisation des numériques, indispensable pour la régression logistique,
+      inutile (mais sans danger) pour les arbres (Q3.4).
     """
-    numeric = make_pipeline(SimpleImputer(strategy="median"), StandardScaler())
+    numeric = make_pipeline(
+        SimpleImputer(strategy="median"), *([StandardScaler()] if scale else [])
+    )
     return ColumnTransformer(
         [
             (
                 "cat",
                 OneHotEncoder(
                     handle_unknown="infrequent_if_exist",
-                    min_frequency=20,
+                    min_frequency=MIN_FREQUENCY,
                     sparse_output=False,
                 ),
                 cat_cols,
@@ -121,6 +132,71 @@ def onehot_preprocessor(cat_cols: list[str], num_cols: list[str]) -> ColumnTrans
             ("num", numeric, num_cols),
         ]
     )
+
+
+def ordinal_preprocessor(cat_cols: list[str], num_cols: list[str]) -> ColumnTransformer:
+    """Codes entiers pour les catégorielles, numériques intactes (NaN compris) : pour les arbres.
+
+    Les codes suivent l'ordre alphabétique : sans signification pour une variable nominale, mais
+    un arbre peut regrouper les modalités par coupures successives. Modalités rares regroupées
+    (``min_frequency``), modalité inconnue codée −1. Pas de standardisation ni d'imputation :
+    les forêts (scikit-learn ≥ 1.4) et les boostings gèrent les valeurs manquantes.
+    """
+    encoder = OrdinalEncoder(
+        handle_unknown="use_encoded_value",
+        unknown_value=-1,
+        min_frequency=MIN_FREQUENCY,
+    )
+    return ColumnTransformer(
+        [("cat", encoder, cat_cols), ("num", "passthrough", num_cols)],
+        verbose_feature_names_out=False,
+    ).set_output(transform="pandas")
+
+
+class NativeCategories(BaseEstimator, TransformerMixin):
+    """Prépare les colonnes pour les modèles qui gèrent nativement les catégories.
+
+    Apprend (``fit``) les modalités fréquentes de chaque colonne catégorielle ; les modalités
+    rares ou jamais vues deviennent ``"infrequent"`` (même traitement de Q2.6 que les autres
+    encodages). Les numériques sont transmises telles quelles (NaN compris).
+
+    Parameters
+    ----------
+    cat_cols, num_cols : colonnes à garder.
+    dtype : ``"category"`` (XGBoost, LightGBM, HistGradientBoosting) ou ``"str"`` (CatBoost).
+    min_frequency : seuil de rareté.
+    """
+
+    def __init__(
+        self, cat_cols, num_cols, dtype="category", min_frequency=MIN_FREQUENCY
+    ):
+        self.cat_cols = cat_cols
+        self.num_cols = num_cols
+        self.dtype = dtype
+        self.min_frequency = min_frequency
+
+    def fit(self, X, y=None):
+        self.categories_ = {}
+        for col in self.cat_cols:
+            counts = X[col].astype(str).value_counts()
+            frequent = sorted(counts.index[counts >= self.min_frequency])
+            self.categories_[col] = [*frequent, INFREQUENT]
+        self.n_features_in_ = X.shape[1]
+        return self
+
+    def transform(self, X):
+        out = X[list(self.cat_cols) + list(self.num_cols)].copy()
+        for col, cats in self.categories_.items():
+            values = out[col].astype(str)
+            values = values.where(values.isin(cats), INFREQUENT)
+            if self.dtype == "category":
+                out[col] = pd.Categorical(values, categories=cats)
+            else:
+                out[col] = values.astype(object)
+        return out
+
+    def get_feature_names_out(self, input_features=None):
+        return np.asarray([*self.cat_cols, *self.num_cols], dtype=object)
 
 
 def feature_columns(features: FeatureSet = "all") -> tuple[list[str], list[str]]:
@@ -132,12 +208,52 @@ def feature_columns(features: FeatureSet = "all") -> tuple[list[str], list[str]]
     return cat, num
 
 
-def pipe(model, features: FeatureSet = "all") -> Pipeline:
-    """Pipeline complet : [variables métier] → encodage/standardisation → modèle.
+def catboost_cat_features(features: FeatureSet = "all") -> tuple[str, ...]:
+    """Colonnes catégorielles à passer à CatBoost : un **tuple** (une liste casse le clonage)."""
+    return tuple(feature_columns(features)[0])
 
-    ``features`` : ``"none"`` (colonnes brutes), ``"guide"`` (variables du guide) ou
-    ``"all"`` (variables du guide + nos variables, Q3.5). Sert à mesurer leur effet à l'étape 5.
+
+Encoding = Literal["onehot", "ordinal", "native", "native_str"]
+
+
+def pipe(
+    model,
+    features: FeatureSet = "all",
+    encoding: Encoding = "onehot",
+    scale: bool = True,
+) -> Pipeline:
+    """Pipeline complet : [variables métier] → encodage → modèle.
+
+    ``features`` : ``"none"`` (colonnes brutes), ``"guide"`` (variables du guide) ou ``"all"``
+    (variables du guide + nos variables, Q3.5) ; sert à mesurer leur effet à l'étape 5.
+
+    ``encoding`` selon la famille de modèle :
+
+    ===============  ==========================================  ================================
+    ``encoding``     préparation                                 modèles
+    ===============  ==========================================  ================================
+    ``"onehot"``     one-hot + imputation (+ standardisation)    régression logistique ; tous
+                                                                 (comparaison du guide, étape 6)
+    ``"ordinal"``    codes entiers, numériques intactes          forêt aléatoire, boostings
+    ``"native"``     dtype ``category``, numériques intactes     XGBoost (``enable_categorical``),
+                                                                 LightGBM, HistGradientBoosting
+    ``"native_str"`` texte, numériques intactes                  CatBoost (``cat_features`` en
+                                                                 tuple)
+    ===============  ==========================================  ================================
+
+    ``scale`` ne concerne que ``"onehot"`` : à garder pour la régression logistique, inutile
+    pour les arbres (Q3.4).
     """
     cat, num = feature_columns(features)
     steps = [] if features == "none" else [AddFeatures(custom=features == "all")]
-    return make_pipeline(*steps, onehot_preprocessor(cat, num), model)
+    if encoding == "onehot":
+        prep = onehot_preprocessor(cat, num, scale=scale)
+    elif encoding == "ordinal":
+        prep = ordinal_preprocessor(cat, num)
+    elif encoding in ("native", "native_str"):
+        prep = NativeCategories(
+            cat, num, dtype="category" if encoding == "native" else "str"
+        )
+    else:
+        raise ValueError(f"encoding inconnu : {encoding!r}")
+    return make_pipeline(*steps, prep, model)

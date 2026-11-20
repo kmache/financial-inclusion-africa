@@ -8,8 +8,11 @@ from financial_inclusion_africa.data import CAT_COLS, NUM_COLS, clean, load_raw
 from financial_inclusion_africa.features import (
     EDU_ORDER,
     AddFeatures,
+    NativeCategories,
+    catboost_cat_features,
     feature_columns,
     onehot_preprocessor,
+    ordinal_preprocessor,
     pipe,
 )
 
@@ -123,3 +126,104 @@ def test_pipe_on_real_rows_smoke():
     model = pipe(LogisticRegression(max_iter=2000)).fit(sample, y.loc[sample.index])
     proba = model.predict_proba(sample.head(10))[:, 1]
     assert ((proba >= 0) & (proba <= 1)).all()
+
+
+# --- Encodages pour les modèles à base d'arbres ----------------------------------------------
+
+
+def test_onehot_without_scaling_keeps_raw_numeric_values():
+    X = make_toy(100)
+    cat, num = feature_columns("all")
+    pre = onehot_preprocessor(cat, num, scale=False).fit(AddFeatures().fit_transform(X))
+    out = pre.transform(AddFeatures().fit_transform(X))
+    col = list(pre.get_feature_names_out()).index("num__age_of_respondent")
+    assert np.array_equal(out[:, col], X["age_of_respondent"].to_numpy())
+
+
+def test_ordinal_preprocessor_keeps_nan_and_codes_unknown():
+    X = make_toy(300)
+    X.loc[:2, "education_level"] = "Other/Dont know/RTA"
+    Xf = AddFeatures().fit_transform(X)
+    cat, num = feature_columns("all")
+    pre = ordinal_preprocessor(cat, num).fit(Xf)
+    out = pre.transform(Xf)
+    assert (
+        out["education_rank"].isna().sum() == 3
+    )  # pas d'imputation : l'arbre gère NaN
+    assert (
+        out["age_of_respondent"] == X["age_of_respondent"]
+    ).all()  # pas de standardisation
+    new = AddFeatures().fit_transform(make_toy(3, seed=5).assign(job_type="Jamais vu"))
+    assert (pre.transform(new)["job_type"] == -1).all()
+
+
+@pytest.mark.parametrize("dtype", ["category", "str"])
+def test_native_categories_learns_frequent_and_maps_rare_unknown(dtype):
+    X = make_toy(300)
+    X.loc[:7, "marital_status"] = "Dont know"  # rare : 8 < 20
+    cat, num = feature_columns("all")
+    nat = NativeCategories(cat, num, dtype=dtype).fit(AddFeatures().fit_transform(X))
+    assert "Dont know" not in nat.categories_["marital_status"]
+    new = AddFeatures().fit_transform(
+        make_toy(3, seed=7).assign(
+            marital_status=["Dont know", "Jamais vue", "Married/Living together"]
+        )
+    )
+    out = nat.transform(new)
+    assert out["marital_status"].astype(str).tolist() == [
+        "infrequent",
+        "infrequent",
+        "Married/Living together",
+    ]
+    assert list(out.columns) == cat + num
+    if dtype == "category":
+        assert isinstance(out["marital_status"].dtype, pd.CategoricalDtype)
+
+
+def _tree_models():
+    from catboost import CatBoostClassifier
+    from lightgbm import LGBMClassifier
+    from sklearn.ensemble import HistGradientBoostingClassifier, RandomForestClassifier
+    from xgboost import XGBClassifier
+
+    return {
+        "rf_ordinal": (
+            RandomForestClassifier(n_estimators=20, random_state=0),
+            "ordinal",
+        ),
+        "hgb_native": (
+            HistGradientBoostingClassifier(max_iter=20, random_state=0),
+            "native",
+        ),
+        "xgb_native": (
+            XGBClassifier(n_estimators=20, enable_categorical=True),
+            "native",
+        ),
+        "lgbm_native": (LGBMClassifier(n_estimators=20, verbose=-1), "native"),
+        "catboost_native": (
+            CatBoostClassifier(
+                iterations=20, verbose=0, cat_features=catboost_cat_features()
+            ),
+            "native_str",
+        ),
+    }
+
+
+@pytest.mark.parametrize("name", list(_tree_models()))
+def test_tree_pipelines_fit_clone_and_handle_unseen_categories(name):
+    from sklearn.base import clone
+
+    model, encoding = _tree_models()[name]
+    X = make_toy(300)
+    y = (X["cellphone_access"] == "Yes").astype(int)
+    fitted = clone(pipe(model, encoding=encoding)).fit(
+        X, y
+    )  # clone : comme cross_validate
+    new = make_toy(4, seed=11).assign(marital_status="Jamais vue", job_type="Inconnu")
+    proba = fitted.predict_proba(new)[:, 1]
+    assert ((proba >= 0) & (proba <= 1)).all()
+
+
+def test_pipe_rejects_unknown_encoding():
+    with pytest.raises(ValueError):
+        pipe(LogisticRegression(), encoding="binaire")
