@@ -5,7 +5,7 @@ De la donnée brute à un modèle évalué honnêtement : pipeline sans fuite, v
 stratifiée, méthodes d'ensemble, optimisation des hyperparamètres (Random Search, Optuna),
 calibration, seuil selon les coûts et interprétation (permutation, SHAP).
 
-> 🚧 **Projet en cours** : étapes 0 à 4 terminées. Les résultats des modèles et les limites seront
+> 🚧 **Projet en cours** : étapes 0 à 5 terminées. Les résultats des modèles et les limites seront
 > ajoutés au fil des étapes ; la version finale du README sera rédigée à l'étape 12.
 
 ## Avancement
@@ -17,8 +17,8 @@ calibration, seuil selon les coûts et interprétation (permutation, SHAP).
 | 2 | Explorer les données (Q2.1–Q2.7, 13 figures) | `01_exploration` | ✅ |
 | 3 | Préparer les données, construire les variables, pipeline | `02_preparation_protocole` | ✅ |
 | 4 | Protocole d'évaluation honnête (test sous scellé, CV stratifiée, CV par pays) | `02_preparation_protocole` | ✅ |
-| 5 | Baselines et diagnostic biais–variance | `03_baselines_ensembles` | ⏳ |
-| 6 | Méthodes d'ensemble (Random Forest, XGBoost, LightGBM, CatBoost) | `03_baselines_ensembles` | — |
+| 5 | Baselines et diagnostic biais–variance | `03_baselines_ensembles` | ✅ |
+| 6 | Méthodes d'ensemble (Random Forest, XGBoost, LightGBM, CatBoost) | `03_baselines_ensembles` | ⏳ |
 | 7 | Optimisation des hyperparamètres (Random Search, Optuna) | `04_hyperparametres` | — |
 | 8–9 | Calibration et seuil selon les coûts | `05_calibration_seuil` | — |
 | 10–11 | Test final, interprétation (permutation, SHAP) | `06_test_final_interpretation` | — |
@@ -123,6 +123,22 @@ row, res = evaluate_cv(logreg, X_train, y_train)     # même objet CV (Stratifie
 
 ![PR-AUC et calibration par pays laissé de côté](reports/figures/04_cv_par_pays.png)
 
+## Baselines et diagnostic biais–variance
+
+| Validation croisée (5 plis) | PR-AUC | Entraînement | Diagnostic |
+|---|---|---|---|
+| Plancher | 0,141 | 0,141 | — |
+| **Régression logistique** (modèle de base) | **0,561 ± 0,026** | 0,566 | **biais** : plafond ≈ 0,56 |
+| Forêt aléatoire, réglages par défaut | 0,475 ± 0,034 | 0,986 | **variance** : mémorise le bruit |
+| Forêt régularisée (`min_samples_leaf=10`) | 0,573 ± 0,031 | 0,651 | bon compromis : +0,013, inférieur à l'écart-type |
+
+- Les variables du guide apportent +0,002 de PR-AUC (5 plis sur 5, mais 10 fois moins que
+  l'écart-type) ; nos deux variables n'apportent rien.
+- Plus de données avec les mêmes variables n'aiderait aucun des deux modèles (courbes
+  d'apprentissage) ; la forêt a besoin de **régularisation**.
+
+![Courbe de validation de min_samples_leaf](reports/figures/05_courbe_validation_min_samples_leaf.png)
+
 ## Données
 
 Compétition **Financial Inclusion in Africa** ([Zindi](https://zindi.africa)), issue des enquêtes
@@ -167,7 +183,7 @@ financial-inclusion-africa/
 │   ├── evaluate.py                # métriques, coût, seuil t*, protocole de CV (CV, SCORING, cv_summary)
 │   └── viz.py                     # style et graphiques (palettes validées daltonisme)
 ├── reports/figures/               # figures exportées par les notebooks
-└── tests/                         # 40 tests (pytest)
+└── tests/                         # 42 tests (pytest)
 ```
 
 ## Règles

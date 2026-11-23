@@ -227,3 +227,50 @@ def per_group_scores(model, X, y, groups, cv) -> pd.DataFrame:
             }
         )
     return pd.DataFrame(rows).set_index("pli")
+
+
+def paired_difference(
+    res_a: dict, res_b: dict, metric: str = "pr_auc"
+) -> dict[str, float]:
+    """Différence B − A pli par pli, pour deux ``cross_validate`` faits sur les **mêmes plis**.
+
+    Renvoie la moyenne, l'écart-type et l'erreur-type (écart-type / √k) des différences, et le
+    nombre de plis où B fait mieux. L'écart-type des différences appariées est bien plus petit
+    que celui des scores eux-mêmes : la difficulté propre à chaque pli s'annule (Q4.2).
+    """
+    a = fold_scores(res_a)[metric].to_numpy()
+    b = fold_scores(res_b)[metric].to_numpy()
+    d = b - a
+    return {
+        "moyenne A": a.mean(),
+        "moyenne B": b.mean(),
+        "écart-type A": a.std(),
+        "différence moyenne B − A": d.mean(),
+        "écart-type des différences": d.std(),
+        "erreur-type des différences": d.std(ddof=1) / np.sqrt(len(d)),
+        "plis où B > A": int((d > 0).sum()),
+        "plis": len(d),
+    }
+
+
+def one_standard_error(
+    values, mean_scores, std_scores, n_splits: int = N_SPLITS, simplest="max"
+):
+    """Règle d'une erreur-type (slide 52) : la valeur la plus simple à moins d'une erreur-type
+    (écart-type / √k) du meilleur score moyen.
+
+    ``simplest`` : ``"max"`` si la plus grande valeur est la plus simple (``min_samples_leaf``,
+    pénalité…), ``"min"`` sinon (profondeur, nombre de feuilles…).
+    """
+    values, mean_scores, std_scores = map(np.asarray, (values, mean_scores, std_scores))
+    best = int(np.argmax(mean_scores))
+    se = std_scores[best] / np.sqrt(n_splits)
+    eligible = values[mean_scores >= mean_scores[best] - se]
+    chosen = eligible.max() if simplest == "max" else eligible.min()
+    return {
+        "meilleure valeur": values[best].item(),
+        "meilleur score": mean_scores[best].item(),
+        "erreur-type": se.item(),
+        "seuil (meilleur − SE)": (mean_scores[best] - se).item(),
+        "valeur retenue (1 SE)": chosen.item(),
+    }

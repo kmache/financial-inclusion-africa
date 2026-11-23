@@ -14,6 +14,8 @@ from financial_inclusion_africa.evaluate import (
     cv_summary,
     fold_scores,
     format_summary,
+    one_standard_error,
+    paired_difference,
     per_group_scores,
 )
 from financial_inclusion_africa.features import fold_category_audit
@@ -112,3 +114,35 @@ def test_load_split_checkpoint():
     X_train, X_test, y_train, y_test = load_split()
     assert (len(X_train), len(X_test)) == (18_819, 4_705)
     assert abs(y_train.mean() - y_test.mean()) < 0.001
+
+
+def _fake_res(values):
+    return {
+        "test_pr_auc": np.asarray(values, dtype=float),
+        "fit_time": np.zeros(len(values)),
+    }
+
+
+def test_paired_difference_cancels_fold_difficulty():
+    a = _fake_res([0.50, 0.60, 0.55, 0.45, 0.58])
+    b = _fake_res([0.51, 0.61, 0.56, 0.46, 0.59])  # +0,01 dans chaque pli
+    d = paired_difference(a, b)
+    assert d["différence moyenne B − A"] == pytest.approx(0.01)
+    assert d["écart-type des différences"] == pytest.approx(0.0, abs=1e-12)
+    assert d["écart-type A"] > 0.05
+    assert d["plis où B > A"] == 5
+
+
+def test_one_standard_error_picks_simplest_within_one_se():
+    values = [1, 5, 10, 50]
+    means = [0.47, 0.57, 0.5725, 0.563]
+    stds = [0.03, 0.03, 0.03, 0.03]  # SE = 0,03 / √5 ≈ 0,0134
+    rule = one_standard_error(values, means, stds, n_splits=5)
+    assert rule["meilleure valeur"] == 10
+    assert rule["valeur retenue (1 SE)"] == 50
+    assert (
+        one_standard_error(values, means, stds, n_splits=5, simplest="min")[
+            "valeur retenue (1 SE)"
+        ]
+        == 5
+    )
