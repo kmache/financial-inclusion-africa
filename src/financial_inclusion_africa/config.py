@@ -10,8 +10,10 @@ VARIABLE_DEFINITIONS = DATA_DIR / "raw" / "VariableDefinitions.csv"
 PROCESSED_DIR = DATA_DIR / "processed"
 FIGURES_DIR = ROOT / "reports" / "figures"
 
-# --- Reproductibilité --------------------------------------------------------
+# --- Reproductibilité et protocole -------------------------------------------
 RANDOM_STATE = 42
+TEST_SIZE = 0.2  # part du jeu mise sous scellé jusqu'à l'étape 10
+N_SPLITS = 5  # plis de la validation croisée stratifiée
 
 # --- Cible -------------------------------------------------------------------
 TARGET = "bank_account"

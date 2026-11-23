@@ -5,7 +5,7 @@ De la donnée brute à un modèle évalué honnêtement : pipeline sans fuite, v
 stratifiée, méthodes d'ensemble, optimisation des hyperparamètres (Random Search, Optuna),
 calibration, seuil selon les coûts et interprétation (permutation, SHAP).
 
-> 🚧 **Projet en cours** : étapes 0 à 3 terminées. Les résultats des modèles et les limites seront
+> 🚧 **Projet en cours** : étapes 0 à 4 terminées. Les résultats des modèles et les limites seront
 > ajoutés au fil des étapes ; la version finale du README sera rédigée à l'étape 12.
 
 ## Avancement
@@ -16,8 +16,8 @@ calibration, seuil selon les coûts et interprétation (permutation, SHAP).
 | 1 | Définir le problème : cadrage métier, métriques, seuil $t^*$ | `01_exploration` | ✅ |
 | 2 | Explorer les données (Q2.1–Q2.7, 13 figures) | `01_exploration` | ✅ |
 | 3 | Préparer les données, construire les variables, pipeline | `02_preparation_protocole` | ✅ |
-| 4 | Protocole d'évaluation honnête (test sous scellé, CV stratifiée, CV par pays) | `02_preparation_protocole` | ⏳ |
-| 5 | Baselines et diagnostic biais–variance | `03_baselines_ensembles` | — |
+| 4 | Protocole d'évaluation honnête (test sous scellé, CV stratifiée, CV par pays) | `02_preparation_protocole` | ✅ |
+| 5 | Baselines et diagnostic biais–variance | `03_baselines_ensembles` | ⏳ |
 | 6 | Méthodes d'ensemble (Random Forest, XGBoost, LightGBM, CatBoost) | `03_baselines_ensembles` | — |
 | 7 | Optimisation des hyperparamètres (Random Search, Optuna) | `04_hyperparametres` | — |
 | 8–9 | Calibration et seuil selon les coûts | `05_calibration_seuil` | — |
@@ -97,6 +97,32 @@ logreg = pipe(LogisticRegression(max_iter=2000))       # AddFeatures → one-hot
 | `"native"` | dtype `category`, numériques intactes | XGBoost, LightGBM, HistGradientBoosting |
 | `"native_str"` | texte, numériques intactes | CatBoost (`catboost_cat_features()`) |
 
+## Le protocole d'évaluation
+
+```python
+from financial_inclusion_africa.data import load_split
+from financial_inclusion_africa.evaluate import CV, evaluate_cv, format_summary
+
+X_train, X_test, y_train, y_test = load_split()      # 80 / 20 stratifié ; X_test scellé jusqu'à l'étape 10
+row, res = evaluate_cv(logreg, X_train, y_train)     # même objet CV (StratifiedKFold 5 plis) pour tous les modèles
+```
+
+- **Test sous scellé** : 18 819 lignes d'entraînement, 4 705 de test, même prévalence (14,08 % et 14,07 %).
+- **Validation croisée** : un seul objet `CV`, pour comparer tous les modèles sur les mêmes plis
+  (différences appariées). Métriques : PR-AUC, ROC-AUC, Brier, log-loss, accuracy, et précision,
+  recall et coût par personne au seuil $t^*$.
+
+| Validation croisée stratifiée (5 plis) | PR-AUC | ROC-AUC | Brier | Recall à $t^*$ | Coût / personne |
+|---|---|---|---|---|---|
+| Plancher (`DummyClassifier`) | 0,141 | 0,500 | 0,121 | 1,000 | 0,43 USD |
+| **Modèle de base (régression logistique)** | **0,561 ± 0,026** | 0,849 ± 0,010 | 0,087 ± 0,003 | 0,852 ± 0,011 | 0,26 USD |
+
+- **Un pays jamais vu** (`StratifiedGroupKFold` par pays) : la PR-AUC tombe à **0,487 ± 0,086**
+  et surtout les probabilités sont mal calibrées (Ouganda : 19,1 % prédit pour 8,9 % réel). Un
+  déploiement dans un autre pays (Sénégal) exigerait des données locales et une recalibration.
+
+![PR-AUC et calibration par pays laissé de côté](reports/figures/04_cv_par_pays.png)
+
 ## Données
 
 Compétition **Financial Inclusion in Africa** ([Zindi](https://zindi.africa)), issue des enquêtes
@@ -135,13 +161,13 @@ financial-inclusion-africa/
 ├── notebooks/                     # 01 → 06, exécutables de haut en bas
 ├── src/financial_inclusion_africa/
 │   ├── config.py                  # chemins, graine, coûts métier
-│   ├── data.py                    # chargement, séparation X / y, colonnes retirées
+│   ├── data.py                    # chargement, séparation X / y, test sous scellé (load_split)
 │   ├── eda.py                     # exploration : taux par modalité, V de Cramér, doublons, modalités rares
 │   ├── features.py                # AddFeatures, préprocesseurs, pipe(model, features, encoding)
-│   ├── evaluate.py                # métriques, coût, seuil t* (puis ECE, intervalle bootstrap)
+│   ├── evaluate.py                # métriques, coût, seuil t*, protocole de CV (CV, SCORING, cv_summary)
 │   └── viz.py                     # style et graphiques (palettes validées daltonisme)
 ├── reports/figures/               # figures exportées par les notebooks
-└── tests/                         # 33 tests (pytest)
+└── tests/                         # 40 tests (pytest)
 ```
 
 ## Règles

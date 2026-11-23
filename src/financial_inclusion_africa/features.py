@@ -257,3 +257,55 @@ def pipe(
     else:
         raise ValueError(f"encoding inconnu : {encoding!r}")
     return make_pipeline(*steps, prep, model)
+
+
+def fold_category_audit(
+    X: pd.DataFrame,
+    y: pd.Series,
+    cv,
+    groups: pd.Series | None = None,
+    cols: list[str] | None = None,
+    min_frequency: int = MIN_FREQUENCY,
+    watch: dict[str, list[str]] | None = None,
+) -> pd.DataFrame:
+    """Q2.6 pli par pli : modalités rares ou inconnues dans chaque pli d'entraînement.
+
+    Pour chaque pli et chaque colonne catégorielle, liste les modalités vues moins de
+    ``min_frequency`` fois à l'entraînement (regroupées par l'encodeur) et celles présentes en
+    validation mais absentes de l'entraînement (inconnues). ``watch`` ajoute des modalités à
+    suivre même quand elles sont fréquentes.
+    """
+    cols = cols or CAT_COLS
+    watch = watch or {}
+    rows = []
+    for fold, (tr, va) in enumerate(cv.split(X, y, groups)):
+        X_tr, X_va = X.iloc[tr], X.iloc[va]
+        held_out = (
+            ", ".join(map(str, pd.unique(groups.iloc[va])))
+            if groups is not None
+            else ""
+        )
+        for col in cols:
+            n_tr, n_va = X_tr[col].value_counts(), X_va[col].value_counts()
+            rare = set(n_tr.index[n_tr < min_frequency])
+            unknown = set(n_va.index.difference(n_tr.index))
+            for modality in sorted(rare | unknown | set(watch.get(col, []))):
+                k_tr, k_va = int(n_tr.get(modality, 0)), int(n_va.get(modality, 0))
+                if k_tr == 0:
+                    status = "inconnue à l'entraînement"
+                elif k_tr < min_frequency:
+                    status = "rare : regroupée"
+                else:
+                    status = "fréquente : colonne propre"
+                rows.append(
+                    {
+                        "pli": fold,
+                        "laissé de côté": held_out,
+                        "variable": col,
+                        "modalité": modality,
+                        "effectif entraînement": k_tr,
+                        "effectif validation": k_va,
+                        "statut": status,
+                    }
+                )
+    return pd.DataFrame(rows)

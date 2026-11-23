@@ -1,10 +1,11 @@
-"""Chargement des données brutes et séparation X / y (étape 3.1)."""
+"""Chargement des données brutes, séparation X / y (étape 3.1) et test sous scellé (4.1)."""
 
 from pathlib import Path
 
 import pandas as pd
+from sklearn.model_selection import train_test_split
 
-from financial_inclusion_africa.config import RAW, TARGET
+from financial_inclusion_africa.config import RANDOM_STATE, RAW, TARGET, TEST_SIZE
 
 CAT_COLS = [
     "country",
@@ -45,3 +46,18 @@ def clean(df: pd.DataFrame) -> tuple[pd.DataFrame, pd.Series]:
     y = y.rename(TARGET)
     X = df.drop(columns=[TARGET, *DROPPED_COLS])
     return X[CAT_COLS + NUM_COLS], y
+
+
+def split(X: pd.DataFrame, y: pd.Series):
+    """Découpage train / test **stratifié** sur la cible, reproductible (étape 4.1).
+
+    Renvoie ``X_train, X_test, y_train, y_test``. Le test ne sert plus jusqu'à l'étape 10.
+    """
+    return train_test_split(
+        X, y, test_size=TEST_SIZE, stratify=y, random_state=RANDOM_STATE
+    )
+
+
+def load_split(path: Path = RAW):
+    """``split(*clean(load_raw()))`` : le même découpage dans tous les notebooks."""
+    return split(*clean(load_raw(path)))
