@@ -1,5 +1,5 @@
-"""Métriques et protocole d'évaluation : coût métier, seuil, validation croisée (puis ECE,
-intervalle bootstrap)."""
+"""Métriques et protocole d'évaluation : coût métier, seuil, validation croisée, calibration (ECE)
+(puis intervalle bootstrap)."""
 
 import numpy as np
 import pandas as pd
@@ -274,3 +274,108 @@ def one_standard_error(
         "seuil (meilleur − SE)": (mean_scores[best] - se).item(),
         "valeur retenue (1 SE)": chosen.item(),
     }
+
+
+# --- Calibration (étape 8) ----------------------------------------------------------------------
+
+
+def _bin_index(p, n_bins: int) -> np.ndarray:
+    """Intervalles de largeur ``1 / n_bins`` ; ``p = 1`` tombe dans le dernier."""
+    return np.clip((np.asarray(p, dtype=float) * n_bins).astype(int), 0, n_bins - 1)
+
+
+def expected_calibration_error(y_true, p, n_bins: int = 10) -> float:
+    """ECE (slide 42) : ``Σ_k (n_k / n) · |acc(k) − conf(k)|`` sur ``n_bins`` intervalles égaux.
+
+    ``conf(k)`` : probabilité moyenne annoncée dans l'intervalle k ; ``acc(k)`` : fréquence
+    observée des positifs. Les intervalles vides ne comptent pas.
+    """
+    y_true, p = np.asarray(y_true, dtype=float), np.asarray(p, dtype=float)
+    bins = _bin_index(p, n_bins)
+    ece = 0.0
+    for b in range(n_bins):
+        m = bins == b
+        if m.any():
+            ece += m.mean() * abs(y_true[m].mean() - p[m].mean())
+    return float(ece)
+
+
+def reliability_table(y_true, p, n_bins: int = 10) -> pd.DataFrame:
+    """Le détail de l'ECE, intervalle par intervalle : effectif, probabilité moyenne annoncée,
+    fréquence observée, écart (observé − annoncé) et contribution à l'ECE."""
+    y_true, p = np.asarray(y_true, dtype=float), np.asarray(p, dtype=float)
+    bins = _bin_index(p, n_bins)
+    rows = []
+    for b in range(n_bins):
+        m = bins == b
+        if m.any():
+            conf, acc = p[m].mean(), y_true[m].mean()
+            rows.append(
+                {
+                    "intervalle": f"[{b / n_bins:.1f} ; {(b + 1) / n_bins:.1f}[",
+                    "effectif": int(m.sum()),
+                    "annoncé (conf)": conf,
+                    "observé (acc)": acc,
+                    "écart observé − annoncé": acc - conf,
+                    "contribution à l'ECE": m.mean() * abs(acc - conf),
+                }
+            )
+    return pd.DataFrame(rows).set_index("intervalle")
+
+
+def calibration_metrics(y_true, p, n_bins: int = 10) -> dict[str, float]:
+    """Métriques de probabilités (ECE, Brier, log-loss) et de classement (PR-AUC, ROC-AUC),
+    plus la prévalence prédite (moyenne des probabilités) à comparer à la prévalence réelle."""
+    y_true, p = np.asarray(y_true), np.asarray(p, dtype=float)
+    return {
+        "ECE": expected_calibration_error(y_true, p, n_bins),
+        "Brier": brier_score_loss(y_true, p),
+        "log-loss": log_loss(y_true, p, labels=[0, 1]),
+        "PR-AUC": average_precision_score(y_true, p),
+        "ROC-AUC": roc_auc_score(y_true, p),
+        "prévalence prédite": p.mean(),
+    }
+
+
+def ece_noise_floor(
+    p, n_bins: int = 10, n_sim: int = 200, seed: int = 0
+) -> dict[str, float]:
+    """ECE d'un modèle **parfaitement calibré** qui annoncerait les mêmes probabilités ``p`` :
+    on tire ``y ~ Bernoulli(p)`` ``n_sim`` fois. L'ECE n'est jamais nulle sur un échantillon
+    fini ; une ECE sous le 95e centile de ce plancher est indiscernable du bruit."""
+    p = np.asarray(p, dtype=float)
+    rng = np.random.default_rng(seed)
+    sims = [
+        expected_calibration_error(rng.uniform(size=p.size) < p, p, n_bins)
+        for _ in range(n_sim)
+    ]
+    return {
+        "moyenne": float(np.mean(sims)),
+        "95e centile": float(np.percentile(sims, 95)),
+    }
+
+
+def expected_counts(y_true, p, groups) -> pd.DataFrame:
+    """Par groupe : nombre réel de positifs, somme des probabilités (nombre attendu, slide 40),
+    écart, erreur relative ``(attendu − réel) / réel``, et bruit attendu.
+
+    Même parfaitement calibré, le nombre réel varie autour du nombre attendu : c'est une somme de
+    Bernoulli, d'écart-type ``√Σ p(1 − p)``. ``écart / écart-type`` au-delà de 2 en valeur
+    absolue signale un biais réel, pas du hasard.
+    """
+    p = np.asarray(p, dtype=float)
+    df = pd.DataFrame(
+        {
+            "groupe": np.asarray(groups),
+            "réel": np.asarray(y_true),
+            "attendu": p,
+            "variance": p * (1 - p),
+        }
+    )
+    out = df.groupby("groupe")[["réel", "attendu", "variance"]].sum()
+    out = pd.concat([out, out.sum().rename("Total").to_frame().T])
+    out["écart"] = out["attendu"] - out["réel"]
+    out["erreur relative"] = out["écart"] / out["réel"]
+    out["écart-type attendu"] = np.sqrt(out.pop("variance"))
+    out["écart / écart-type"] = out["écart"] / out["écart-type attendu"]
+    return out

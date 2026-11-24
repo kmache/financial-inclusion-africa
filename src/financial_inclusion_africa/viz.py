@@ -244,3 +244,66 @@ def heatmap(
     ax.set_title(title)
     for s in ax.spines.values():
         s.set_visible(False)
+
+
+def fr_axis(ax: plt.Axes, axis: str = "both", fmt: str = "{:.1f}") -> None:
+    """Graduations au format français (virgule décimale) sur l'axe ``x``, ``y`` ou les deux."""
+    formatter = mpl.ticker.FuncFormatter(lambda v, _: fr(fmt.format(v)))
+    if axis in ("x", "both"):
+        ax.xaxis.set_major_formatter(formatter)
+    if axis in ("y", "both"):
+        ax.yaxis.set_major_formatter(formatter)
+
+
+def reliability(
+    ax: plt.Axes,
+    y_true,
+    p,
+    n_bins: int = 10,
+    color: str = INK,
+    label: str | None = None,
+    ci: bool = True,
+    hist: bool = False,
+    lim: float = 1.0,
+) -> None:
+    """Diagramme de fiabilité (slide 41) : dans chaque intervalle de probabilité, fréquence
+    observée des positifs en fonction de la probabilité moyenne annoncée.
+
+    ``ci`` : intervalle de confiance à 95 % de la fréquence observée (approximation normale) :
+    un intervalle peu peuplé est bruité. ``hist`` : répartition des probabilités en bas du
+    graphique (barres grises), pour voir où se trouvent les personnes. ``lim`` : zoom sur
+    ``[0 ; lim]``.
+    """
+    from financial_inclusion_africa.evaluate import reliability_table
+
+    t = reliability_table(y_true, p, n_bins)
+    conf, acc, n = t["annoncé (conf)"], t["observé (acc)"], t["effectif"]
+    if hist:
+        axh = ax.twinx()
+        width = 1 / n_bins
+        centers = (np.arange(n_bins) + 0.5) * width
+        counts = np.bincount(
+            np.clip((np.asarray(p) * n_bins).astype(int), 0, n_bins - 1),
+            minlength=n_bins,
+        )
+        axh.bar(centers, counts, width=width * 0.9, color=GRID, zorder=0)
+        axh.set_ylim(0, counts.max() / 0.22)  # barres dans le bas du graphique
+        axh.set_yticks([])
+        axh.set_box_aspect(1)
+        axh.grid(False)
+        for s in axh.spines.values():
+            s.set_visible(False)
+        ax.set_zorder(axh.get_zorder() + 1)
+        ax.patch.set_visible(False)
+    ax.plot([0, lim], [0, lim], ls="--", lw=1, color=INK_3, zorder=1)
+    if ci:
+        half = 1.96 * np.sqrt(acc * (1 - acc) / n)
+        ax.errorbar(
+            conf, acc, yerr=half, fmt="none", ecolor=color, elinewidth=1, alpha=0.6
+        )
+    ax.plot(conf, acc, "o-", color=color, ms=4.5, lw=1.6, label=label, zorder=3)
+    ax.set(xlim=(0, lim), ylim=(0, lim))
+    ax.set_box_aspect(1)
+    ax.set_xlabel("Probabilité annoncée (moyenne de l'intervalle)")
+    ax.set_ylabel("Fréquence observée")
+    fr_axis(ax)

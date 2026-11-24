@@ -20,7 +20,8 @@ calibration, seuil selon les coûts et interprétation (permutation, SHAP).
 | 5 | Baselines et diagnostic biais–variance | `03_baselines_ensembles` | ✅ |
 | 6 | Méthodes d'ensemble (Random Forest, XGBoost, LightGBM, CatBoost) | `03_baselines_ensembles` | ✅ |
 | 7 | Optimisation des hyperparamètres (Random Search, Optuna) | `04_hyperparametres` | ✅ |
-| 8–9 | Calibration et seuil selon les coûts | `05_calibration_seuil` | ⏳ |
+| 8 | Calibration des probabilités (ECE, Platt, isotone, comptes par pays) | `05_calibration_seuil` | ✅ |
+| 9 | Seuil de décision selon les coûts | `05_calibration_seuil` | ⏳ |
 | 10–11 | Test final, interprétation (permutation, SHAP) | `06_test_final_interpretation` | — |
 | 12 | Publication | — | — |
 
@@ -181,6 +182,30 @@ row, res = evaluate_cv(logreg, X_train, y_train)     # même objet CV (Stratifie
 
 ![Meilleur score après n essais](reports/figures/07_historique_recherche.png)
 
+## Calibration des probabilités
+
+Prédictions hors pli du train uniquement. L'ECE d'un modèle **parfaitement calibré** qui annoncerait
+les mêmes probabilités vaut ≈ 0,005 (95e centile 0,007) : c'est le plancher de bruit.
+
+| Modèle | ECE brute | Platt | Isotone | Comptes par pays (somme des probabilités) |
+|---|---|---|---|---|
+| Régression logistique | 0,0059 | 0,0068 | 0,0034 | exacts (< 1 personne d'écart) |
+| LightGBM réglé | 0,0047 | 0,0047 | 0,0040 | dans le bruit |
+| CatBoost réglé | 0,0053 | **0,0255** | 0,0048 | dans le bruit (total −1,2 %) |
+| Forêt par défaut | **0,0583** | 0,0203 | 0,0065 | — |
+| Forêt `min_samples_leaf=10` | 0,0087 | 0,0209 | 0,0041 | **Ouganda +29 %** |
+
+- Les trois candidats sont **déjà calibrés** (log-loss minimisée directement) : on garde leurs
+  probabilités brutes. L'isotone n'apporterait rien et coûterait 0,002 de PR-AUC.
+- **Platt peut nuire** : sans `decision_function` (CatBoost, forêts), scikit-learn applique la
+  sigmoïde à la probabilité et non au log-odds, ce qui déforme une sortie déjà juste.
+- **Une ECE globale correcte peut cacher un biais par groupe** : la forêt régularisée surestime
+  l'Ouganda de 29 %. Pour la banque centrale, la régression logistique est la plus sûre.
+- Apprendre la calibration sur les lignes d'entraînement est **pire que ne rien faire** (forêt :
+  ECE 0,058 → 0,107).
+
+![Diagrammes de fiabilité](reports/figures/08_diagrammes_fiabilite.png)
+
 ## Données
 
 Compétition **Financial Inclusion in Africa** ([Zindi](https://zindi.africa)), issue des enquêtes
@@ -223,10 +248,10 @@ financial-inclusion-africa/
 │   ├── eda.py                     # exploration : taux par modalité, V de Cramér, doublons, modalités rares
 │   ├── features.py                # AddFeatures, préprocesseurs, pipe(model, features, encoding)
 │   ├── models.py                  # modèles retenus : hyperparamètres réglés, make_lgbm(), make_catboost()
-│   ├── evaluate.py                # métriques, coût, seuil t*, protocole de CV (CV, SCORING, cv_summary)
-│   └── viz.py                     # style et graphiques (palettes validées daltonisme)
+│   ├── evaluate.py                # métriques, coût, seuil t*, protocole de CV, calibration (ECE, comptes)
+│   └── viz.py                     # style et graphiques (palettes validées daltonisme, fiabilité)
 ├── reports/figures/               # figures exportées par les notebooks
-└── tests/                         # 46 tests (pytest)
+└── tests/                         # 50 tests (pytest)
 ```
 
 ## Règles
