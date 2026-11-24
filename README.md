@@ -23,7 +23,7 @@ calibration, seuil selon les coûts et interprétation (permutation, SHAP).
 | 8 | Calibration des probabilités (ECE, Platt, isotone, comptes par pays) | `05_calibration_seuil` | ✅ |
 | 9 | Seuil de décision selon les coûts, choix du modèle final | `05_calibration_seuil` | ✅ |
 | 10 | Test final, ouvert une seule fois (IC bootstrap) | `06_test_final_interpretation` | ✅ |
-| 11 | Interprétation (permutation, SHAP) | `06_test_final_interpretation` | ⏳ |
+| 11 | Interprétation (permutation, SHAP, audit par genre) | `06_test_final_interpretation` | ✅ |
 | 12 | Publication | — | — |
 
 ## Le problème
@@ -256,6 +256,30 @@ de confiance à 95 % par bootstrap (1 000 rééchantillons).
   autres candidats n'y ont pas été évalués.
 
 ![Validation croisée contre test](reports/figures/10_cv_contre_test.png)
+
+## Ce que le modèle a appris
+
+| Variable | Permutation (baisse de PR-AUC) | SHAP agrégé (log-odds) |
+|---|---|---|
+| Niveau d'éducation | **0,217** (1er) | 0,447 (2e) |
+| Type d'emploi | 0,123 (2e) | 0,350 (4e) |
+| Pays | 0,068 (3e) | 0,407 (3e) |
+| Accès à un téléphone | 0,066 (4e) | **0,575** (1er) |
+| Âge | 0,038 (5e) | 0,319 (5e) |
+| Genre | 0,009 (7e) | 0,235 (6e) |
+
+- Les hypothèses de l'exploration sont confirmées : **éducation, revenu formel, téléphone**.
+- Les valeurs SHAP sont agrégées par **variable d'origine** (somme signée des colonnes construites,
+  interactions partagées) : sans cela, l'éducation, répartie sur quatre colonnes, paraît secondaire.
+- **Genre** : il fait baisser la probabilité des femmes ; au seuil $t^*$, le modèle retrouve
+  **83 % des femmes** qui ont un compte contre **92 % des hommes** (test). Sans la variable
+  (validation croisée) : même coût, PR-AUC −0,004, écart de recall **divisé par deux**. Les proxys
+  (*Spouse* : 99 % de femmes) devinent encore le genre (ROC-AUC 0,91). **Recommandation : exclure
+  le genre du ciblage et le garder pour l'audit** (recall par genre suivi à chaque version).
+- Ce sont des **associations, pas des causes** : « donner un téléphone fait ouvrir un compte »
+  ne se déduit pas du modèle.
+
+![Audit par genre](reports/figures/11_audit_genre.png)
 
 ## Données
 
