@@ -5,7 +5,7 @@ De la donnée brute à un modèle évalué honnêtement : pipeline sans fuite, v
 stratifiée, méthodes d'ensemble, optimisation des hyperparamètres (Random Search, Optuna),
 calibration, seuil selon les coûts et interprétation (permutation, SHAP).
 
-> 🚧 **Projet en cours** : étapes 0 à 5 terminées. Les résultats des modèles et les limites seront
+> 🚧 **Projet en cours** : étapes 0 à 6 terminées. Les résultats des modèles et les limites seront
 > ajoutés au fil des étapes ; la version finale du README sera rédigée à l'étape 12.
 
 ## Avancement
@@ -18,8 +18,8 @@ calibration, seuil selon les coûts et interprétation (permutation, SHAP).
 | 3 | Préparer les données, construire les variables, pipeline | `02_preparation_protocole` | ✅ |
 | 4 | Protocole d'évaluation honnête (test sous scellé, CV stratifiée, CV par pays) | `02_preparation_protocole` | ✅ |
 | 5 | Baselines et diagnostic biais–variance | `03_baselines_ensembles` | ✅ |
-| 6 | Méthodes d'ensemble (Random Forest, XGBoost, LightGBM, CatBoost) | `03_baselines_ensembles` | ⏳ |
-| 7 | Optimisation des hyperparamètres (Random Search, Optuna) | `04_hyperparametres` | — |
+| 6 | Méthodes d'ensemble (Random Forest, XGBoost, LightGBM, CatBoost) | `03_baselines_ensembles` | ✅ |
+| 7 | Optimisation des hyperparamètres (Random Search, Optuna) | `04_hyperparametres` | ⏳ |
 | 8–9 | Calibration et seuil selon les coûts | `05_calibration_seuil` | — |
 | 10–11 | Test final, interprétation (permutation, SHAP) | `06_test_final_interpretation` | — |
 | 12 | Publication | — | — |
@@ -138,6 +138,27 @@ row, res = evaluate_cv(logreg, X_train, y_train)     # même objet CV (Stratifie
   d'apprentissage) ; la forêt a besoin de **régularisation**.
 
 ![Courbe de validation de min_samples_leaf](reports/figures/05_courbe_validation_min_samples_leaf.png)
+
+## Méthodes d'ensemble (réglages par défaut)
+
+| Validation croisée (5 plis) | PR-AUC | Écart au modèle de base (plis gagnés) | Temps / pli |
+|---|---|---|---|
+| **CatBoost, catégories natives** | **0,583 ± 0,027** | +0,022 (5/5) | 22 s |
+| HistGradientBoosting, natif | 0,574 ± 0,026 | +0,013 (4/5) | 0,4 s |
+| Random Forest (`min_samples_leaf=10`) | 0,573 ± 0,031 | +0,013 (4/5) | 2,6 s |
+| LightGBM (one-hot / natif) | 0,565 / 0,564 | +0,004 / +0,003 | 0,3 s |
+| Régression logistique (modèle de base) | 0,561 ± 0,026 | — | 0,2 s |
+| XGBoost (one-hot) | 0,540 ± 0,025 | −0,021 (0/5) | 1,0 s |
+
+- **Pas de vainqueur net** : aucun écart ne dépasse l'écart-type (0,026), mais CatBoost natif
+  devance le modèle de base dans les 5 plis.
+- **Catégories natives** : décisives pour CatBoost (+0,019 sur sa version one-hot), sans effet net
+  pour les autres boostings.
+- **Surapprentissage par défaut** : fort pour XGBoost, modéré pour LightGBM.
+- **Candidats pour l'étape 7** : CatBoost natif (performance) et LightGBM natif (rapidité, marge de
+  réglage).
+
+![Écart au modèle de base, pli par pli](reports/figures/06_ecarts_au_modele_de_base.png)
 
 ## Données
 
