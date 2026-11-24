@@ -80,12 +80,12 @@ rédigée à chaque question du guide.
 
 | Notebook | Étapes | Contenu | Durée (12 cœurs) |
 |---|---|---|---|
-| `01_exploration` | 1–2 | cadrage, seuil $t^*$, exploration (Q1.x, Q2.x) | ≈ 1 min |
-| `02_preparation_protocole` | 3–4 | variables, pipeline, test sous scellé, CV stratifiée et par pays | ≈ 1 min |
+| `01_exploration` | 1–2 | cadrage, seuil $t^*$, exploration (Q1.x, Q2.x) | ≈ 20 s |
+| `02_preparation_protocole` | 3–4 | variables, pipeline, test sous scellé, CV stratifiée et par pays | ≈ 20 s |
 | `03_baselines_ensembles` | 5–6 | biais–variance, forêts, boostings | ≈ 2 min |
-| `04_hyperparametres` | 7 | Random Search, Optuna, Halving, nested CV | ≈ 12 min |
+| `04_hyperparametres` | 7 | Random Search, Optuna, Halving, nested CV | ≈ 12,5 min |
 | `05_calibration_seuil` | 8–9 | calibration, seuil selon les coûts, choix du modèle final | ≈ 6 min |
-| `06_test_final_interpretation` | 10–11 | test final (une seule fois), permutation, SHAP, audit par genre | ≈ 2 min |
+| `06_test_final_interpretation` | 10–11 | test final (une seule fois), permutation, SHAP, audit par genre | ≈ 40 s |
 
 ```bash
 uv run pytest                          # 55 tests (ceux qui lisent les données sont ignorés si data/raw/ est vide)
@@ -93,7 +93,9 @@ uv run ruff check src tests            # style
 ```
 
 Les résultats sont reproductibles : `random_state = 42` partout, CatBoost sur un nombre de threads
-fixé (`models.CATBOOST_THREADS`), Optuna avec un échantillonneur à graine.
+fixé (`models.CATBOOST_THREADS`), Optuna avec un échantillonneur à graine. **Vérifié** sur un clone
+neuf du dépôt (`uv sync`, données copiées, six notebooks exécutés, ≈ 22 min au total) : tous les
+scores sont identiques à ceux des notebooks versionnés ; seuls les temps de calcul changent.
 
 ## Méthode
 
