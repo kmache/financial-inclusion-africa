@@ -392,3 +392,48 @@ def cost_curve(
     fp = (contacted & ~y).sum(axis=1)
     fn = (~contacted & y).sum(axis=1)
     return cost_fp * fp + cost_fn * fn
+
+
+# --- Test final (étape 10) ----------------------------------------------------------------------
+
+
+def bootstrap_ci(y_true, p, metric, n_boot: int = 1000, seed: int = 0) -> np.ndarray:
+    """Intervalle de confiance bootstrap à 95 % d'une métrique (slide 30, code du guide) :
+    ``n_boot`` rééchantillons avec remise du jeu de test, centiles 2,5 et 97,5. Les
+    rééchantillons sans positif ou sans négatif sont ignorés."""
+    rng = np.random.default_rng(seed)
+    y_true, p = np.asarray(y_true), np.asarray(p)
+    vals = []
+    for _ in range(n_boot):
+        idx = rng.integers(0, len(y_true), len(y_true))
+        if y_true[idx].min() == y_true[idx].max():
+            continue
+        vals.append(metric(y_true[idx], p[idx]))
+    return np.percentile(vals, [2.5, 97.5])
+
+
+def bootstrap_metrics(
+    y_true, p, metrics: dict, n_boot: int = 1000, seed: int = 0
+) -> pd.DataFrame:
+    """Plusieurs métriques et leur intervalle bootstrap à 95 %, sur les **mêmes**
+    rééchantillons (``metrics`` : nom → fonction ``(y, p) -> float``). Renvoie la valeur sur le
+    test complet, les bornes, et l'écart-type bootstrap."""
+    rng = np.random.default_rng(seed)
+    y_true, p = np.asarray(y_true), np.asarray(p, dtype=float)
+    boot = {name: [] for name in metrics}
+    for _ in range(n_boot):
+        idx = rng.integers(0, len(y_true), len(y_true))
+        if y_true[idx].min() == y_true[idx].max():
+            continue
+        for name, f in metrics.items():
+            boot[name].append(f(y_true[idx], p[idx]))
+    rows = {}
+    for name, f in metrics.items():
+        lo, hi = np.percentile(boot[name], [2.5, 97.5])
+        rows[name] = {
+            "test": f(y_true, p),
+            "IC 95 % bas": lo,
+            "IC 95 % haut": hi,
+            "écart-type bootstrap": np.std(boot[name]),
+        }
+    return pd.DataFrame(rows).T

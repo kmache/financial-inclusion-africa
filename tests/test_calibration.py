@@ -52,3 +52,27 @@ def test_ece_noise_floor_is_small_but_positive():
     p = np.random.default_rng(1).beta(1, 6, size=5000)
     floor = ece_noise_floor(p, n_sim=50)
     assert 0 < floor["moyenne"] < floor["95e centile"] < 0.03
+
+
+def test_bootstrap_ci_contains_value_and_shrinks_with_n():
+    from sklearn.metrics import roc_auc_score
+
+    from financial_inclusion_africa.evaluate import bootstrap_ci, bootstrap_metrics
+
+    rng = np.random.default_rng(0)
+    widths = []
+    for n in (400, 4000):
+        p = rng.uniform(size=n)
+        y = (rng.uniform(size=n) < p).astype(int)
+        lo, hi = bootstrap_ci(y, p, roc_auc_score, n_boot=200)
+        assert lo < roc_auc_score(y, p) < hi
+        widths.append(hi - lo)
+    assert widths[1] < widths[0] / 2  # largeur ≈ 1/√n
+    table = bootstrap_metrics(
+        y, p, {"auc": roc_auc_score, "moyenne": lambda a, b: b.mean()}, n_boot=100
+    )
+    assert (
+        table.loc["auc", "IC 95 % bas"]
+        < table.loc["auc", "test"]
+        < table.loc["auc", "IC 95 % haut"]
+    )

@@ -22,7 +22,8 @@ calibration, seuil selon les coûts et interprétation (permutation, SHAP).
 | 7 | Optimisation des hyperparamètres (Random Search, Optuna) | `04_hyperparametres` | ✅ |
 | 8 | Calibration des probabilités (ECE, Platt, isotone, comptes par pays) | `05_calibration_seuil` | ✅ |
 | 9 | Seuil de décision selon les coûts, choix du modèle final | `05_calibration_seuil` | ✅ |
-| 10–11 | Test final, interprétation (permutation, SHAP) | `06_test_final_interpretation` | — |
+| 10 | Test final, ouvert une seule fois (IC bootstrap) | `06_test_final_interpretation` | ✅ |
+| 11 | Interprétation (permutation, SHAP) | `06_test_final_interpretation` | ⏳ |
 | 12 | Publication | — | — |
 
 ## Le problème
@@ -233,6 +234,29 @@ KaziPay contacte une personne si $p \geq t^* = C_{FP} / (C_{FP} + C_{FN}) = 1/11
 
 ![Coût selon le seuil](reports/figures/09_cout_selon_seuil.png)
 
+## Résultat final sur le test
+
+Modèle final (LightGBM réglé, probabilités brutes, seuil $t^* = 1/11$) réentraîné sur tout le
+train ; test de 4 705 personnes **ouvert une seule fois**, après toutes les décisions. Intervalles
+de confiance à 95 % par bootstrap (1 000 rééchantillons).
+
+| Métrique | Test | IC 95 % | Validation croisée |
+|---|---|---|---|
+| **PR-AUC** | **0,597** | [0,559 ; 0,635] | 0,581 ± 0,024 |
+| ROC-AUC | 0,876 | [0,861 ; 0,889] | 0,861 ± 0,010 |
+| Brier | 0,083 | [0,077 ; 0,088] | 0,085 ± 0,003 |
+| Précision / recall au seuil $t^*$ | 0,306 / 0,876 | | 0,301 / 0,852 |
+| **Coût par personne** | **0,227 USD** | [0,207 ; 0,247] | 0,244 ± 0,012 |
+
+- **1 068 USD** pour 4 705 personnes : 1 896 contacts, 82 personnes qui ont un compte oubliées sur
+  662 ; contacter tout le monde coûterait 2 021,5 USD (**−47 %**).
+- Les estimations de validation croisée tombent dans les intervalles du test (la ROC-AUC à la
+  limite) : le protocole a tenu.
+- **Le test n'a servi qu'une fois** ; aucune décision n'a été modifiée après l'avoir vu, et les
+  autres candidats n'y ont pas été évalués.
+
+![Validation croisée contre test](reports/figures/10_cv_contre_test.png)
+
 ## Données
 
 Compétition **Financial Inclusion in Africa** ([Zindi](https://zindi.africa)), issue des enquêtes
@@ -275,10 +299,10 @@ financial-inclusion-africa/
 │   ├── eda.py                     # exploration : taux par modalité, V de Cramér, doublons, modalités rares
 │   ├── features.py                # AddFeatures, préprocesseurs, pipe(model, features, encoding)
 │   ├── models.py                  # hyperparamètres réglés, candidats, modèle et seuil finaux (make_final)
-│   ├── evaluate.py                # métriques, coût, courbe de coût, seuil t*, protocole de CV, calibration
+│   ├── evaluate.py                # métriques, coût, seuil t*, protocole de CV, calibration, bootstrap
 │   └── viz.py                     # style et graphiques (palettes validées daltonisme, fiabilité)
 ├── reports/figures/               # figures exportées par les notebooks
-└── tests/                         # 52 tests (pytest)
+└── tests/                         # 53 tests (pytest)
 ```
 
 ## Règles
