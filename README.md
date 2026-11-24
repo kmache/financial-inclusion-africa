@@ -5,7 +5,7 @@ De la donnée brute à un modèle évalué honnêtement : pipeline sans fuite, v
 stratifiée, méthodes d'ensemble, optimisation des hyperparamètres (Random Search, Optuna),
 calibration, seuil selon les coûts et interprétation (permutation, SHAP).
 
-> 🚧 **Projet en cours** : étapes 0 à 6 terminées. Les résultats des modèles et les limites seront
+> 🚧 **Projet en cours** : étapes 0 à 7 terminées. Les résultats des modèles et les limites seront
 > ajoutés au fil des étapes ; la version finale du README sera rédigée à l'étape 12.
 
 ## Avancement
@@ -19,8 +19,8 @@ calibration, seuil selon les coûts et interprétation (permutation, SHAP).
 | 4 | Protocole d'évaluation honnête (test sous scellé, CV stratifiée, CV par pays) | `02_preparation_protocole` | ✅ |
 | 5 | Baselines et diagnostic biais–variance | `03_baselines_ensembles` | ✅ |
 | 6 | Méthodes d'ensemble (Random Forest, XGBoost, LightGBM, CatBoost) | `03_baselines_ensembles` | ✅ |
-| 7 | Optimisation des hyperparamètres (Random Search, Optuna) | `04_hyperparametres` | ⏳ |
-| 8–9 | Calibration et seuil selon les coûts | `05_calibration_seuil` | — |
+| 7 | Optimisation des hyperparamètres (Random Search, Optuna) | `04_hyperparametres` | ✅ |
+| 8–9 | Calibration et seuil selon les coûts | `05_calibration_seuil` | ⏳ |
 | 10–11 | Test final, interprétation (permutation, SHAP) | `06_test_final_interpretation` | — |
 | 12 | Publication | — | — |
 
@@ -160,6 +160,27 @@ row, res = evaluate_cv(logreg, X_train, y_train)     # même objet CV (Stratifie
 
 ![Écart au modèle de base, pli par pli](reports/figures/06_ecarts_au_modele_de_base.png)
 
+## Optimisation des hyperparamètres
+
+40 essais par recherche, même métrique (PR-AUC) et mêmes plis.
+
+| Recherche | Par défaut | Réglé | Gain (écarts-types) | Temps |
+|---|---|---|---|---|
+| LightGBM · Random Search | 0,564 | 0,579 | 0,7 | ≈ 50 s |
+| **LightGBM · Optuna (TPE)** | 0,564 | **0,581 ± 0,024** | **0,8** | ≈ 40 s |
+| CatBoost · Optuna (TPE) | 0,581 | **0,584 ± 0,027** | 0,1 | ≈ 8 min |
+
+- Le réglage **corrige le surapprentissage de LightGBM** (PR-AUC d'entraînement 0,71 → 0,62) ;
+  CatBoost était déjà bien réglé par défaut.
+- Estimation honnête de la procédure (nested CV) : **0,579 ± 0,025** ; `best_score_` n'est que
+  légèrement optimiste ici.
+- Hyperparamètres qui comptent : `num_leaves` et `colsample_bytree` (LightGBM), `depth` (CatBoost).
+- Les deux candidats réglés (enregistrés dans `models.py`) font jeu égal et battent la régression
+  logistique dans les 5 plis, de moins d'un écart-type (+0,021 et +0,024). Le choix final se fera
+  sur la calibration et le coût (étapes 8–9).
+
+![Meilleur score après n essais](reports/figures/07_historique_recherche.png)
+
 ## Données
 
 Compétition **Financial Inclusion in Africa** ([Zindi](https://zindi.africa)), issue des enquêtes
@@ -201,10 +222,11 @@ financial-inclusion-africa/
 │   ├── data.py                    # chargement, séparation X / y, test sous scellé (load_split)
 │   ├── eda.py                     # exploration : taux par modalité, V de Cramér, doublons, modalités rares
 │   ├── features.py                # AddFeatures, préprocesseurs, pipe(model, features, encoding)
+│   ├── models.py                  # modèles retenus : hyperparamètres réglés, make_lgbm(), make_catboost()
 │   ├── evaluate.py                # métriques, coût, seuil t*, protocole de CV (CV, SCORING, cv_summary)
 │   └── viz.py                     # style et graphiques (palettes validées daltonisme)
 ├── reports/figures/               # figures exportées par les notebooks
-└── tests/                         # 42 tests (pytest)
+└── tests/                         # 46 tests (pytest)
 ```
 
 ## Règles
