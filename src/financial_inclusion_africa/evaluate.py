@@ -379,3 +379,16 @@ def expected_counts(y_true, p, groups) -> pd.DataFrame:
     out["écart-type attendu"] = np.sqrt(out.pop("variance"))
     out["écart / écart-type"] = out["écart"] / out["écart-type attendu"]
     return out
+
+
+def cost_curve(
+    y_true, y_proba, thresholds, cost_fp: float = COST_FP, cost_fn: float = COST_FN
+) -> np.ndarray:
+    """Coût total pour chaque seuil de ``thresholds`` (calcul vectorisé de
+    ``cost_at_threshold``) : contacter toutes les personnes dont ``y_proba >= seuil``."""
+    y = np.asarray(y_true).astype(bool)
+    p = np.asarray(y_proba, dtype=float)
+    contacted = p[None, :] >= np.asarray(thresholds, dtype=float)[:, None]
+    fp = (contacted & ~y).sum(axis=1)
+    fn = (~contacted & y).sum(axis=1)
+    return cost_fp * fp + cost_fn * fn

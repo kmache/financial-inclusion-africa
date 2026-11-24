@@ -50,3 +50,15 @@ def test_candidates_fit_after_clone(name):
     model = clone(factory(**overrides) if overrides else factory()).fit(X, y)
     proba = model.predict_proba(X.head(5))[:, 1]
     assert ((proba >= 0) & (proba <= 1)).all()
+
+
+def test_final_choice():
+    from financial_inclusion_africa.models import (
+        FINAL_MODEL,
+        FINAL_THRESHOLD,
+        make_final,
+    )
+
+    assert FINAL_MODEL in CANDIDATES
+    assert FINAL_THRESHOLD == pytest.approx(1 / 11)
+    assert type(make_final()[-1]) is type(CANDIDATES[FINAL_MODEL]()[-1])

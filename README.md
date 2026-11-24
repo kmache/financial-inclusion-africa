@@ -21,7 +21,7 @@ calibration, seuil selon les coûts et interprétation (permutation, SHAP).
 | 6 | Méthodes d'ensemble (Random Forest, XGBoost, LightGBM, CatBoost) | `03_baselines_ensembles` | ✅ |
 | 7 | Optimisation des hyperparamètres (Random Search, Optuna) | `04_hyperparametres` | ✅ |
 | 8 | Calibration des probabilités (ECE, Platt, isotone, comptes par pays) | `05_calibration_seuil` | ✅ |
-| 9 | Seuil de décision selon les coûts | `05_calibration_seuil` | ⏳ |
+| 9 | Seuil de décision selon les coûts, choix du modèle final | `05_calibration_seuil` | ✅ |
 | 10–11 | Test final, interprétation (permutation, SHAP) | `06_test_final_interpretation` | — |
 | 12 | Publication | — | — |
 
@@ -206,6 +206,33 @@ les mêmes probabilités vaut ≈ 0,005 (95e centile 0,007) : c'est le plancher 
 
 ![Diagrammes de fiabilité](reports/figures/08_diagrammes_fiabilite.png)
 
+## Seuil de décision et modèle final
+
+KaziPay contacte une personne si $p \geq t^* = C_{FP} / (C_{FP} + C_{FN}) = 1/11 \approx 0{,}091$
+(probabilités calibrées, étape 8). Coûts hors pli sur les 18 819 personnes du train :
+
+| Stratégie | Contactés | Coût | Par personne |
+|---|---|---|---|
+| Ne contacter personne | 0 | 13 250 USD | 0,704 |
+| LightGBM au seuil 0,5 | 1 354 | 8 724 USD | 0,464 |
+| Contacter tout le monde | 18 819 | 8 084,5 USD | 0,430 |
+| Régression logistique au seuil $t^*$ | 8 102 | 4 876,5 USD | 0,259 |
+| **LightGBM réglé au seuil $t^*$** | 7 512 | **4 587 USD** | **0,244** |
+| CatBoost réglé au seuil $t^*$ | 7 232 | 4 529,5 USD | 0,241 |
+
+- **Le seuil compte plus que le modèle** : au seuil 0,5, le modèle coûte plus cher que de contacter
+  tout le monde ; au seuil $t^*$, le coût est presque divisé par deux (précision 0,30, recall 0,85).
+- Le seuil appris par `TunedThresholdClassifierCV` (0,08–0,11) tombe sur $t^*$ et ne fait pas mieux
+  en validation croisée emboîtée. Avec des probabilités non calibrées (`class_weight="balanced"`),
+  le meilleur seuil serait 0,39.
+- Si un oubli ne coûtait que 2 USD : $t^* = 0{,}2$, deux fois moins de contacts (3 865).
+- **Modèle final : LightGBM réglé, probabilités brutes, seuil $t^*$** (`models.FINAL_MODEL`,
+  `FINAL_THRESHOLD`, `make_final()`). CatBoost coûte 0,003 USD de moins par personne (5 plis sur 5),
+  mais l'écart est sous l'erreur-type des coûts : la règle d'une erreur-type retient le plus simple
+  et le plus rapide.
+
+![Coût selon le seuil](reports/figures/09_cout_selon_seuil.png)
+
 ## Données
 
 Compétition **Financial Inclusion in Africa** ([Zindi](https://zindi.africa)), issue des enquêtes
@@ -247,11 +274,11 @@ financial-inclusion-africa/
 │   ├── data.py                    # chargement, séparation X / y, test sous scellé (load_split)
 │   ├── eda.py                     # exploration : taux par modalité, V de Cramér, doublons, modalités rares
 │   ├── features.py                # AddFeatures, préprocesseurs, pipe(model, features, encoding)
-│   ├── models.py                  # modèles retenus : hyperparamètres réglés, make_lgbm(), make_catboost()
-│   ├── evaluate.py                # métriques, coût, seuil t*, protocole de CV, calibration (ECE, comptes)
+│   ├── models.py                  # hyperparamètres réglés, candidats, modèle et seuil finaux (make_final)
+│   ├── evaluate.py                # métriques, coût, courbe de coût, seuil t*, protocole de CV, calibration
 │   └── viz.py                     # style et graphiques (palettes validées daltonisme, fiabilité)
 ├── reports/figures/               # figures exportées par les notebooks
-└── tests/                         # 50 tests (pytest)
+└── tests/                         # 52 tests (pytest)
 ```
 
 ## Règles

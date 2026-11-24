@@ -12,6 +12,7 @@ from sklearn.linear_model import LogisticRegression
 from sklearn.pipeline import Pipeline
 
 from financial_inclusion_africa.config import RANDOM_STATE
+from financial_inclusion_africa.evaluate import theoretical_threshold
 from financial_inclusion_africa.features import catboost_cat_features, pipe
 
 LGBM_PARAMS = {
@@ -72,3 +73,17 @@ CANDIDATES = {
     "CatBoost réglé": make_catboost,
 }
 """Les modèles qui passent à l'étape 8 (calibration) : le modèle de base et les deux candidats."""
+
+FINAL_MODEL = "LightGBM réglé"
+"""Modèle retenu à l'étape 9. CatBoost coûte 0,003 USD de moins par personne (5 plis sur 5), mais
+l'écart est sous une erreur-type des coûts ; à coût équivalent on prend le plus simple et le plus
+rapide (règle d'une erreur-type, slide 52). Probabilités brutes : déjà calibrées (étape 8)."""
+
+FINAL_THRESHOLD = theoretical_threshold()
+"""Seuil retenu à l'étape 9 : le seuil théorique t* = C_FP / (C_FP + C_FN) ≈ 0,091. Le seuil
+appris par ``TunedThresholdClassifierCV`` n'apporte rien de plus (probabilités calibrées)."""
+
+
+def make_final() -> Pipeline:
+    """Le modèle final (non entraîné), utilisé à l'étape 10 sur le test."""
+    return CANDIDATES[FINAL_MODEL]()

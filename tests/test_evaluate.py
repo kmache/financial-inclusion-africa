@@ -53,3 +53,19 @@ def test_full_classification_report_lists_both_classes():
         [0, 1, 0, 1], [0.1, 0.9, 0.6, 0.4], threshold=0.5
     )
     assert "No (0)" in report and "Yes (1)" in report
+
+
+def test_cost_curve_matches_cost_at_threshold():
+    import numpy as np
+
+    from financial_inclusion_africa.evaluate import cost_curve
+
+    rng = np.random.default_rng(0)
+    p = rng.uniform(size=500)
+    y = rng.uniform(size=500) < p
+    grid = [0.0, 0.05, 0.091, 0.5, 1.01]
+    expected = [cost_at_threshold(y, p, t) for t in grid]
+    assert cost_curve(y, p, grid) == pytest.approx(expected)
+    assert cost_curve(y, p, [0.2], 0.5, 2.0)[0] == pytest.approx(
+        cost_at_threshold(y, p, 0.2, 0.5, 2.0)
+    )
